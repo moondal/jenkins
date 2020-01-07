@@ -1,0 +1,74 @@
+#! /bin/bash
+
+#Debug mode
+set -v
+
+## Command Control 계정에 부여하는 명령어 권한
+#echo 계정명 ALL=NOPASSWD: /sbin/service, /etc/init.d, /bin/chmod, /usr/bin/yum, /bin/find, /bin/vi /aida/httpd.conf> /etc/sudoers.d/aida
+#source /etc/sudoers
+
+##install vim vim데몬 설치
+yum install -y vim
+
+ver=`cat /etc/redhat-release | awk '{print $3}'`
+
+##set Logrotate 로그 로테이트 설정
+yum install -y logrotate
+touch /etc/logrotate.d/cmdlog
+echo -e "/var/log/cmdlog {" >> /etc/logrotate.d/cmdlog
+echo -e "weekly" >> /etc/logrotate.d/cmdlog
+echo -e "rotate 12" >> /etc/logrotate.d/cmdlog
+echo -e "missingok" >> /etc/logrotate.d/cmdlog
+echo -e "dateext" >> /etc/logrotate.d/cmdlog
+echo -e "create 0600 root root" >> /etc/logrotate.d/cmdlog
+echo -e "}" >> /etc/logrotate.d/cmdlog
+
+
+## select version 6버전일경우와 7번전일 경우로 나뉨
+if [[ $ver =~ 6. ]]; then
+
+### edit syslog lotation
+sed -i '7 i \    weekly' /etc/logrotate.d/syslog
+sed -i '8 i \    rotate 12' /etc/logrotate.d/syslog
+sed -i '9 i \    missingok' /etc/logrotate.d/syslog
+sed -i '10 i \    dateext' /etc/logrotate.d/syslog
+
+### edit rsyslog 
+sed -i '39 i \local3.*                                           \/var\/log\/cmdlog' /etc/rsyslog.conf
+sed -i '43s/cron.none/cron.none;local3.none/' /etc/rsyslog.conf
+
+### create cmdlog
+echo -e "export PROMPT_COMMAND='trap \"\" 1 2 15; history -a >(tee -a ~/.bash_history | while read line; do if [[ \$line =~ ^#[0-9]*$ ]]; then continue; fi; logger -p local3.debug -t \"bash[\$\$]\" \"\$ORIGIN_USER:\$USER \$SSH_IP [\$PWD]: \$line\"; done); trap 1 2 15;'" >> /etc/bashrc
+echo -e "export SSH_IP=\$(who am i | awk '{print \$5}')" >> /etc/bashrc
+source ~/.bashrc
+
+### rsyslog restart
+/usr/sbin/logrotate /etc/logrotate.d/cmdlog
+/etc/init.d/rsyslog restart
+
+else
+
+### edit syslog lotation
+sed -i '8 i \    weekly' /etc/logrotate.d/syslog
+sed -i '9 i \    rotate 12' /etc/logrotate.d/syslog
+sed -i '10 i \    dateext' /etc/logrotate.d/syslog
+
+### setting rsyslog
+yum install -y rsyslog
+
+sed -i '51 i \local3.*                                           \/var\/log\/cmdlog' /etc/rsyslog.conf
+sed -i '55s/cron.none/cron.none;local3.none/' /etc/rsyslog.conf
+source ~/.bashrc
+
+### create cmdlog
+echo -e "export PROMPT_COMMAND='trap \"\" 1 2 15; history -a >(tee -a ~/.bash_history | while read line; do if [[ \$line =~ ^#[0-9]*$ ]]; then continue; fi; logger -p local3.debug -t \"bash[\$\$]\" \"\$ORIGIN_USER:\$USER \$SSH_IP [\$PWD]: \$line\"; done); trap 1 2 15;'" >> /etc/bashrc
+echo -e "export SSH_IP=\$(who am i | awk '{print \$5}')" >> /etc/bashrc
+
+### rsyslog restart
+/usr/sbin/logrotate /etc/logrotate.d/cmdlog
+systemctl restart rsyslog
+
+fi
+rm -f $0
+exit
+
